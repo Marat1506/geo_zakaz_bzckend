@@ -30,6 +30,12 @@ export class GeoController {
     );
   }
 
+  @Get('zones')
+  async getPublicZones(): Promise<ServiceZone[]> {
+    // Public endpoint: return only active service zones for client map display
+    return this.geoService.getActiveZones();
+  }
+
   @Get('admin/zones')
   @UseGuards(JwtAuthGuard, AdminGuard)
   async getZones(): Promise<ServiceZone[]> {

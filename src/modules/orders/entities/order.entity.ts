@@ -74,12 +74,12 @@ export class Order {
   @Column({ name: 'estimated_time', type: 'integer' })
   estimatedTime: number;
 
-  @Column({ name: 'zone_id' })
-  zoneId: string;
+  @Column({ name: 'zone_id', nullable: true })
+  zoneId: string | null;
 
-  @ManyToOne(() => ServiceZone)
+  @ManyToOne(() => ServiceZone, { nullable: true })
   @JoinColumn({ name: 'zone_id' })
-  zone: ServiceZone;
+  zone: ServiceZone | null;
 
   @VersionColumn()
   version: number;

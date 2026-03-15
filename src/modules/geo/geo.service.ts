@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { ServiceZone, ZoneType } from './entities/service-zone.entity';
 import { CreateServiceZoneDto } from './dto/create-service-zone.dto';
 import { UpdateServiceZoneDto } from './dto/update-service-zone.dto';
@@ -17,6 +20,7 @@ export class GeoService {
   constructor(
     @InjectRepository(ServiceZone)
     private readonly serviceZoneRepository: Repository<ServiceZone>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async checkLocation(lat: number, lng: number): Promise<GeoCheckResult> {
@@ -38,19 +42,17 @@ export class GeoService {
       };
     }
 
-    // Check each zone
+    // Check each zone (support multiple zones: user is in zone if inside any)
     for (const zone of zones) {
       let isInside = false;
 
       if (zone.type === ZoneType.CIRCLE) {
-        // Check circle zone using Haversine formula
-        const distance = this.calculateDistance(
-          lat,
-          lng,
-          zone.centerLat,
-          zone.centerLng,
-        );
-        isInside = distance <= zone.radiusMeters;
+        const centerLat = Number(zone.centerLat);
+        const centerLng = Number(zone.centerLng);
+        const radiusMeters = Number(zone.radiusMeters);
+        if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng) || !Number.isFinite(radiusMeters)) continue;
+        const distance = this.calculateDistance(lat, lng, centerLat, centerLng);
+        isInside = distance <= radiusMeters;
       } else if (zone.type === ZoneType.POLYGON) {
         // Check polygon zone using PostGIS ST_Contains
         isInside = await this.checkPointInPolygon(lat, lng, zone.id);
@@ -99,11 +101,40 @@ export class GeoService {
   }
 
   async deleteServiceZone(id: string): Promise<void> {
-    await this.serviceZoneRepository.delete(id);
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE orders ALTER COLUMN zone_id DROP NOT NULL',
+      );
+    } catch {
+      // Column may already be nullable
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      await queryRunner.query(
+        'UPDATE orders SET zone_id = NULL WHERE zone_id = $1',
+        [id],
+      );
+      await queryRunner.query(
+        'UPDATE menu_items SET zone_id = NULL WHERE zone_id = $1',
+        [id],
+      );
+      await queryRunner.query('DELETE FROM service_zones WHERE id = $1', [id]);
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction().catch(() => {});
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete zone';
+      throw new InternalServerErrorException(message);
+    } finally {
+      await queryRunner.release().catch(() => {});
+    }
   }
 
-  private async getActiveZones(): Promise<ServiceZone[]> {
-    // Get from database
+  async getActiveZones(): Promise<ServiceZone[]> {
+    // Get active zones from database
     const zones = await this.serviceZoneRepository.find({
       where: { active: true },
     });
