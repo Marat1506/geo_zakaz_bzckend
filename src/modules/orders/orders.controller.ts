@@ -27,9 +27,9 @@ export class OrdersController {
   @Post()
   @UseInterceptors(
     FileInterceptor('carPhoto', {
-      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
       fileFilter: (req, file, cb) => {
-        if (!file.mimetype.match(/^image\/(jpeg|png|jpg)$/)) {
+        if (!file.mimetype.match(/^image\/(jpeg|png|jpg|webp|heic|heif)$/)) {
           return cb(
             new BadRequestException('Only images are allowed'),
             false,
