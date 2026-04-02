@@ -18,7 +18,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { Order, OrderStatus } from './entities/order.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../auth/guards/admin.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 
 @Controller('orders')
 export class OrdersController {
@@ -85,12 +87,14 @@ export class OrdersController {
   }
 
   @Get('admin/list')
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
   async getOrders(
+    @Request() req: any,
     @Query('status') status?: OrderStatus,
     @Query('zoneId') zoneId?: string,
   ): Promise<Order[]> {
-    return this.ordersService.getOrders({ status, zoneId });
+    return this.ordersService.getOrders(req.user, { status, zoneId });
   }
 
   @Get('customer/my-orders')
@@ -100,11 +104,13 @@ export class OrdersController {
   }
 
   @Patch('admin/:id/status')
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
   async updateOrderStatus(
     @Param('id') id: string,
     @Body() updateStatusDto: UpdateOrderStatusDto,
+    @Request() req: any,
   ): Promise<Order> {
-    return this.ordersService.updateOrderStatus(id, updateStatusDto.status);
+    return this.ordersService.updateOrderStatus(id, updateStatusDto.status, req.user);
   }
 }

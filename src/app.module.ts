@@ -11,6 +11,7 @@ import { GeoModule } from './modules/geo/geo.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { FilesModule } from './modules/files/files.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { NotificationModule } from './modules/notifications/notification.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { OrdersModule } from './modules/orders/orders.module';
     MenuModule,
     FilesModule,
     OrdersModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

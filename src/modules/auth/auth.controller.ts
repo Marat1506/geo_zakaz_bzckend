@@ -1,12 +1,15 @@
 import {
   Controller, Post, Get, Patch, Body, HttpCode, HttpStatus,
-  UseGuards, Request,
+  UseGuards, Request, Param,
 } from '@nestjs/common';
-import { AuthService, AuthResponse } from './auth.service';
+import { AuthService, AuthResponse, CreateSellerDto } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -17,7 +20,7 @@ export class AuthController {
     private readonly authService: AuthService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
@@ -40,7 +43,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getMe(@Request() req: any) {
-    const user = await this.userRepository.findOne({ where: { id: req.user.sub } });
+    const user = await this.userRepository.findOne({ where: { id: req.user.id } });
     if (!user) return null;
     return { id: user.id, email: user.email, name: user.name, phone: user.phone, role: user.role };
   }
@@ -48,11 +51,54 @@ export class AuthController {
   @Patch('profile')
   @UseGuards(JwtAuthGuard)
   async updateProfile(@Request() req: any, @Body() body: { name?: string; phone?: string }) {
-    const user = await this.userRepository.findOne({ where: { id: req.user.sub } });
+    const user = await this.userRepository.findOne({ where: { id: req.user.id } });
     if (!user) return null;
     if (body.name !== undefined) user.name = body.name;
     if (body.phone !== undefined) user.phone = body.phone;
     await this.userRepository.save(user);
     return { id: user.id, email: user.email, name: user.name, phone: user.phone, role: user.role };
+  }
+
+  @Get('sellers')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async getSellers() {
+    return this.authService.getSellers();
+  }
+
+  @Post('sellers')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async createSeller(@Body() dto: CreateSellerDto) {
+    return this.authService.createSeller(dto);
+  }
+
+  @Patch('sellers/:id/block')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async blockSeller(@Param('id') id: string) {
+    return this.authService.blockSeller(id);
+  }
+
+  @Patch('sellers/:id/unblock')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async unblockSeller(@Param('id') id: string) {
+    return this.authService.unblockSeller(id);
+  }
+
+  @Patch('sellers/:id/approve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async approveSeller(@Param('id') id: string) {
+    return this.authService.approveSeller(id);
+  }
+
+  @Patch('sellers/:id/reject')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  async rejectSeller(@Param('id') id: string) {
+    return this.authService.rejectSeller(id);
   }
 }

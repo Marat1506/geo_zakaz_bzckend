@@ -13,6 +13,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { GeoService } from '../geo/geo.service';
 import { MenuService } from '../menu/menu.service';
 import { FilesService } from '../files/files.service';
+import { User, UserRole } from '../auth/entities/user.entity';
+import { NotificationGateway } from '../notifications/notification.gateway';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class OrdersService {
@@ -25,6 +28,8 @@ export class OrdersService {
     private readonly menuService: MenuService,
     private readonly filesService: FilesService,
     private readonly dataSource: DataSource,
+    private readonly notificationGateway: NotificationGateway,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async createOrder(
@@ -54,6 +59,19 @@ export class OrdersService {
     const menuItems = await Promise.all(
       menuItemIds.map((id) => this.menuService.getMenuItem(id)),
     );
+
+    // Validate all items belong to the same zone
+    const itemZoneIds = new Set(menuItems.map((mi) => mi.zoneId));
+    if (itemZoneIds.size > 1) {
+      throw new BadRequestException('Все товары должны быть из одной зоны');
+    }
+    // Also verify items belong to the detected zone
+    if (itemZoneIds.size === 1) {
+      const itemZoneId = [...itemZoneIds][0];
+      if (itemZoneId && geoCheck.zoneId && itemZoneId !== geoCheck.zoneId) {
+        throw new BadRequestException('Все товары должны быть из одной зоны');
+      }
+    }
 
     // Calculate order items and total
     const orderItems: Partial<OrderItem>[] = [];
@@ -108,7 +126,10 @@ export class OrdersService {
         carPhotoUrl: carPhotoResult.url,
         estimatedTime,
         zoneId: geoCheck.zoneId,
-        customerId: orderData.customerId, // Add customerId
+        sellerId: geoCheck.sellerId,
+        customerLat: orderData.customerLat,
+        customerLng: orderData.customerLng,
+        customerId: orderData.customerId,
       });
 
       const savedOrder = await manager.save(Order, newOrder);
@@ -126,7 +147,20 @@ export class OrdersService {
     });
 
     // Load order with items
-    return this.getOrder(order.id);
+    const savedOrder = await this.getOrder(order.id);
+
+    // Notify seller about new order
+    if (geoCheck.sellerId) {
+      this.notificationGateway.emitNewOrder(geoCheck.sellerId, savedOrder);
+      this.notificationService
+        .sendPushToUser(geoCheck.sellerId, {
+          title: 'Новый заказ',
+          body: `Новый заказ #${savedOrder.orderNumber} на сумму ${savedOrder.totalAmount}`,
+        })
+        .catch(() => {});
+    }
+
+    return savedOrder;
   }
 
   async getOrder(id: string): Promise<Order> {
@@ -142,16 +176,24 @@ export class OrdersService {
     return order;
   }
 
-  async getOrders(filters?: {
-    status?: OrderStatus;
-    zoneId?: string;
-  }): Promise<Order[]> {
+  async getOrders(
+    user?: User,
+    filters?: {
+      status?: OrderStatus;
+      zoneId?: string;
+    },
+  ): Promise<Order[]> {
     const query = this.orderRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.items', 'items')
       .leftJoinAndSelect('items.menuItem', 'menuItem')
       .leftJoinAndSelect('order.zone', 'zone')
       .orderBy('order.createdAt', 'DESC');
+
+    // Seller sees only their own orders
+    if (user?.role === UserRole.SELLER) {
+      query.andWhere('order.sellerId = :sellerId', { sellerId: user.id });
+    }
 
     if (filters?.status) {
       query.andWhere('order.status = :status', { status: filters.status });
@@ -172,12 +214,47 @@ export class OrdersService {
     });
   }
 
-  async updateOrderStatus(id: string, status: OrderStatus): Promise<Order> {
+  async updateOrderStatus(
+    id: string,
+    status: OrderStatus,
+    user?: User,
+  ): Promise<Order> {
     const order = await this.getOrder(id);
+
+    // Seller can only update their own orders
+    if (user?.role === UserRole.SELLER && order.sellerId !== user.id) {
+      throw new ForbiddenException(
+        'Вы можете обновлять статус только своих заказов',
+      );
+    }
 
     try {
       order.status = status;
-      return await this.orderRepository.save(order);
+      const updatedOrder = await this.orderRepository.save(order);
+
+      // Emit WebSocket event
+      this.notificationGateway.emitOrderStatusChanged(id, status);
+
+      // Send push to customer for relevant statuses
+      if (order.customerId) {
+        if (status === OrderStatus.ON_THE_WAY) {
+          this.notificationService
+            .sendPushToUser(order.customerId, {
+              title: 'Заказ в пути',
+              body: 'Ваш заказ в пути',
+            })
+            .catch(() => {});
+        } else if (status === OrderStatus.DELIVERED) {
+          this.notificationService
+            .sendPushToUser(order.customerId, {
+              title: 'Заказ доставлен',
+              body: 'Ваш заказ доставлен',
+            })
+            .catch(() => {});
+        }
+      }
+
+      return updatedOrder;
     } catch (error) {
       if (error.name === 'OptimisticLockVersionMismatchError') {
         throw new ConflictException(

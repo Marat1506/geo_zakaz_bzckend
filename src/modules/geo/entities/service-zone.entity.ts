@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { User } from '../../auth/entities/user.entity';
 
 export enum ZoneType {
   CIRCLE = 'circle',
@@ -42,6 +45,13 @@ export class ServiceZone {
 
   @Column({ default: true })
   active: boolean;
+
+  @Column({ name: 'seller_id', nullable: true })
+  sellerId: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'seller_id' })
+  seller: User;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

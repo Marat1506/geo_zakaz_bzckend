@@ -1,14 +1,16 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { MenuItem } from './entities/menu-item.entity';
 import { MenuCategory } from './entities/menu-category.entity';
+import { ServiceZone } from '../geo/entities/service-zone.entity';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { User, UserRole } from '../auth/entities/user.entity';
 
 export interface MenuResponse {
   readyNow: MenuItem[];
@@ -24,9 +26,11 @@ export class MenuService {
     private readonly menuItemRepository: Repository<MenuItem>,
     @InjectRepository(MenuCategory)
     private readonly categoryRepository: Repository<MenuCategory>,
+    @InjectRepository(ServiceZone)
+    private readonly serviceZoneRepository: Repository<ServiceZone>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-  ) {}
+  ) { }
 
   async getMenu(zoneId?: string): Promise<MenuResponse> {
     // Get from database (removed caching due to compatibility issues)
@@ -35,9 +39,7 @@ export class MenuService {
       .where('item.available = :available', { available: true });
 
     if (zoneId) {
-      query.andWhere('(item.zoneId = :zoneId OR item.zoneId IS NULL)', {
-        zoneId,
-      });
+      query.andWhere('item.zoneId = :zoneId', { zoneId });
     }
 
     const items = await query.getMany();
@@ -61,6 +63,48 @@ export class MenuService {
     return { readyNow, regular };
   }
 
+  /** Returns all available items for a specific zone (public endpoint) */
+  async getItemsByZone(zoneId: string, onlyAvailable = true): Promise<MenuItem[]> {
+    const query = this.menuItemRepository
+      .createQueryBuilder('item')
+      .where('item.zoneId = :zoneId', { zoneId });
+
+    if (onlyAvailable) {
+      query.andWhere('item.available = :available', { available: true });
+    }
+
+    return query.orderBy('item.name', 'ASC').getMany();
+  }
+
+  /** Returns all items from zones belonging to this seller */
+  async getSellerItems(user: User, zoneId?: string): Promise<MenuItem[]> {
+    // Get all zones owned by this seller
+    const sellerZones = await this.serviceZoneRepository.find({
+      where: { sellerId: user.id },
+      select: ['id'],
+    });
+
+    if (sellerZones.length === 0) {
+      return [];
+    }
+
+    const zoneIds = sellerZones.map((z) => z.id);
+
+    const query = this.menuItemRepository
+      .createQueryBuilder('item')
+      .where('item.zoneId IN (:...zoneIds)', { zoneIds });
+
+    if (zoneId) {
+      // Extra filter: only items from the requested zone (must belong to seller)
+      if (!zoneIds.includes(zoneId)) {
+        return [];
+      }
+      query.andWhere('item.zoneId = :zoneId', { zoneId });
+    }
+
+    return query.orderBy('item.name', 'ASC').getMany();
+  }
+
   async getMenuItem(id: string): Promise<MenuItem> {
     const item = await this.menuItemRepository.findOne({ where: { id } });
     if (!item) {
@@ -69,7 +113,33 @@ export class MenuService {
     return item;
   }
 
-  async createMenuItem(itemData: CreateMenuItemDto): Promise<MenuItem> {
+  async createMenuItem(itemData: CreateMenuItemDto, user?: User): Promise<MenuItem> {
+    // If user is provided, verify zone ownership
+    if (user && itemData.zoneId) {
+      const zone = await this.serviceZoneRepository.findOne({
+        where: { id: itemData.zoneId },
+      });
+      if (!zone) {
+        throw new NotFoundException('Zone not found');
+      }
+      // Seller can only create items in their own zones; superadmin can create in any zone
+      if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
+        throw new ForbiddenException('You can only add items to your own zones');
+      }
+    }
+
+    // If category is provided, handle it
+    if (itemData.category) {
+      // Find or create category
+      let category = await this.categoryRepository.findOne({
+        where: { name: itemData.category },
+      });
+      if (!category) {
+        category = this.categoryRepository.create({ name: itemData.category });
+        await this.categoryRepository.save(category);
+      }
+    }
+
     const item = this.menuItemRepository.create(itemData);
     const savedItem = await this.menuItemRepository.save(item);
     return savedItem;
@@ -78,11 +148,50 @@ export class MenuService {
   async updateMenuItem(
     id: string,
     itemData: UpdateMenuItemDto,
+    user?: User,
   ): Promise<MenuItem> {
     const item = await this.getMenuItem(id);
+
+    // If seller is updating, verify they aren't moving the item to a zone they don't own
+    if (user && user.role === UserRole.SELLER && itemData.zoneId) {
+      const zone = await this.serviceZoneRepository.findOne({
+        where: { id: itemData.zoneId },
+      });
+      if (!zone || zone.sellerId !== user.id) {
+        throw new ForbiddenException('You can only move items to your own zones');
+      }
+    }
+
+    // If category is provided, handle it
+    if (itemData.category) {
+      // Find or create category
+      let category = await this.categoryRepository.findOne({
+        where: { name: itemData.category },
+      });
+      if (!category) {
+        category = this.categoryRepository.create({ name: itemData.category });
+        await this.categoryRepository.save(category);
+      }
+    }
+
     Object.assign(item, itemData);
     const updatedItem = await this.menuItemRepository.save(item);
     return updatedItem;
+  }
+
+  async verifyItemOwnership(itemId: string, sellerId: string): Promise<void> {
+    const item = await this.menuItemRepository.findOne({
+      where: { id: itemId },
+      relations: ['zone'],
+    });
+
+    if (!item) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (!item.zone || item.zone.sellerId !== sellerId) {
+      throw new ForbiddenException('You do not have permission to manage this item');
+    }
   }
 
   async deleteMenuItem(id: string): Promise<void> {

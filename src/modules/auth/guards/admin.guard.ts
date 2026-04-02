@@ -7,6 +7,10 @@ export class AdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    return user && user.role === UserRole.ADMIN;
+    // Backward compatibility: accept both legacy 'admin' and new 'superadmin' role
+    return (
+      user &&
+      (user.role === UserRole.SUPERADMIN || (user.role as string) === 'admin')
+    );
   }
 }

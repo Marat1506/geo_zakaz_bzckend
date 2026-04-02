@@ -8,9 +8,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { User } from './entities/user.entity';
+import { User, UserRole, UserStatus } from './entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+
+export interface CreateSellerDto {
+  email: string;
+  name: string;
+  password: string;
+}
 
 export interface AuthResponse {
   accessToken: string;
@@ -31,11 +37,11 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   async login(loginDto: LoginDto): Promise<AuthResponse> {
     console.log('Login attempt for email:', loginDto.email);
-    
+
     const user = await this.userRepository.findOne({
       where: { email: loginDto.email },
     });
@@ -43,6 +49,21 @@ export class AuthService {
     if (!user) {
       console.log('User not found:', loginDto.email);
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status === UserStatus.PENDING) {
+      console.log('Login forbidden: account pending approval for', loginDto.email);
+      throw new UnauthorizedException('Ваш аккаунт ожидает одобрения администратора');
+    }
+
+    if (user.status === UserStatus.REJECTED) {
+      console.log('Login forbidden: account rejected for', loginDto.email);
+      throw new UnauthorizedException('Ваш запрос на регистрацию отклонен');
+    }
+
+    if (user.isBlocked) {
+      console.log('Login forbidden: account blocked for', loginDto.email);
+      throw new UnauthorizedException('Ваш аккаунт заблокирован');
     }
 
     console.log('User found, validating password...');
@@ -77,17 +98,42 @@ export class AuthService {
       throw new ConflictException('User with this email already exists');
     }
 
+    const requestedRole = registerDto.role || UserRole.CUSTOMER;
+    // Only superadmin can register superadmins directly
+    if (requestedRole === UserRole.SUPERADMIN) {
+      throw new ConflictException('Invalid role');
+    }
+
+    const status = requestedRole === UserRole.SELLER ? UserStatus.PENDING : UserStatus.APPROVED;
+
     // Create new user
     const user = this.userRepository.create({
       email: registerDto.email,
       name: registerDto.name,
       phone: registerDto.phone,
-      role: 'customer' as any, // Will be converted to UserRole.CUSTOMER
+      role: requestedRole,
+      status: status,
       passwordHash: registerDto.password, // Will be hashed by @BeforeInsert
     });
 
     // Save user (password will be hashed automatically)
     await this.userRepository.save(user);
+
+    // If seller, return empty tokens as an object to avoid frontend crashes
+    if (status === UserStatus.PENDING) {
+      console.log('Seller registration successful (pending approval):', user.email);
+      return {
+        accessToken: null,
+        refreshToken: null,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          name: user.name,
+          phone: user.phone,
+        },
+      } as any;
+    }
 
     // Generate tokens
     const tokens = await this.generateTokens(user);
@@ -153,6 +199,70 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async getSellers(): Promise<User[]> {
+    return this.userRepository.find({
+      where: { role: UserRole.SELLER },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async approveSeller(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id, role: UserRole.SELLER } });
+    if (!user) {
+      throw new NotFoundException('Seller not found');
+    }
+    user.status = UserStatus.APPROVED;
+    user.isBlocked = false;
+    return this.userRepository.save(user);
+  }
+
+  async rejectSeller(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id, role: UserRole.SELLER } });
+    if (!user) {
+      throw new NotFoundException('Seller not found');
+    }
+    user.status = UserStatus.REJECTED;
+    return this.userRepository.save(user);
+  }
+
+  async createSeller(dto: CreateSellerDto): Promise<User> {
+    const existing = await this.userRepository.findOne({ where: { email: dto.email } });
+    if (existing) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const user = this.userRepository.create({
+      email: dto.email,
+      name: dto.name,
+      role: UserRole.SELLER,
+      status: UserStatus.APPROVED, // Admin created sellers are auto-approved
+      passwordHash: dto.password, // hashed by @BeforeInsert
+    });
+
+    return this.userRepository.save(user);
+  }
+
+  async blockSeller(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.isBlocked = true;
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    return this.userRepository.save(user);
+  }
+
+  async unblockSeller(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.isBlocked = false;
+    return this.userRepository.save(user);
   }
 
   private async generateTokens(user: User): Promise<{

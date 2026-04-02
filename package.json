@@ -34,8 +34,10 @@
     "@nestjs/mapped-types": "^2.1.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/websockets": "^11.1.17",
     "bcrypt": "^6.0.0",
     "cache-manager": "^5.7.6",
     "cache-manager-redis-yet": "^4.1.2",
@@ -51,9 +53,11 @@
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
+    "socket.io": "^4.8.3",
     "stripe": "^20.4.0",
     "typeorm": "^0.3.28",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

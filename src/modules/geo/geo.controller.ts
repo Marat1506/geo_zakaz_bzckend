@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { GeoService, GeoCheckResult } from './geo.service';
 import { CheckLocationDto } from './dto/check-location.dto';
@@ -14,11 +15,15 @@ import { CreateServiceZoneDto } from './dto/create-service-zone.dto';
 import { UpdateServiceZoneDto } from './dto/update-service-zone.dto';
 import { ServiceZone } from './entities/service-zone.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../auth/guards/admin.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../auth/entities/user.entity';
 
 @Controller('geo')
 export class GeoController {
   constructor(private readonly geoService: GeoService) {}
+
+  // ── Public endpoint — no guard ──────────────────────────────────────────────
 
   @Post('check')
   async checkLocation(
@@ -30,39 +35,45 @@ export class GeoController {
     );
   }
 
-  @Get('zones')
+  @Get('zones/public')
   async getPublicZones(): Promise<ServiceZone[]> {
-    // Public endpoint: return only active service zones for client map display
-    return this.geoService.getActiveZones();
+    return this.geoService.getPublicZones();
   }
 
-  @Get('admin/zones')
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  async getZones(): Promise<ServiceZone[]> {
-    return this.geoService.getServiceZones();
+  // ── Authenticated endpoints ─────────────────────────────────────────────────
+
+  @Get('zones')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  async getZones(@Request() req): Promise<ServiceZone[]> {
+    return this.geoService.getZones(req.user);
   }
 
-  @Post('admin/zones')
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Post('zones')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
   async createZone(
     @Body() createZoneDto: CreateServiceZoneDto,
+    @Request() req,
   ): Promise<ServiceZone> {
-    console.log('Received zone creation request:', JSON.stringify(createZoneDto, null, 2));
-    return this.geoService.createServiceZone(createZoneDto);
+    return this.geoService.createZone(createZoneDto, req.user);
   }
 
-  @Patch('admin/zones/:id')
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Patch('zones/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
   async updateZone(
     @Param('id') id: string,
     @Body() updateZoneDto: UpdateServiceZoneDto,
+    @Request() req,
   ): Promise<ServiceZone> {
-    return this.geoService.updateServiceZone(id, updateZoneDto);
+    return this.geoService.updateZone(id, updateZoneDto, req.user);
   }
 
-  @Delete('admin/zones/:id')
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  async deleteZone(@Param('id') id: string): Promise<void> {
-    return this.geoService.deleteServiceZone(id);
+  @Delete('zones/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
+  async deleteZone(@Param('id') id: string, @Request() req): Promise<void> {
+    return this.geoService.deleteZone(id, req.user);
   }
 }

@@ -2,8 +2,14 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class InitialSchema1700000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Enable PostGIS extension
+    // Enable extensions
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS postgis;`);
+    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+
+    // Create enums
+    await queryRunner.query(`
+      CREATE TYPE "public"."user_role" AS ENUM('admin', 'superadmin', 'seller', 'customer');
+    `);
 
     // Create users table
     await queryRunner.query(`
@@ -11,7 +17,7 @@ export class InitialSchema1700000000000 implements MigrationInterface {
         "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
         "email" varchar NOT NULL UNIQUE,
         "password_hash" varchar NOT NULL,
-        "role" varchar NOT NULL DEFAULT 'customer',
+        "role" "public"."user_role" NOT NULL DEFAULT 'customer',
         "created_at" timestamp NOT NULL DEFAULT now(),
         "updated_at" timestamp NOT NULL DEFAULT now()
       );

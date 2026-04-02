@@ -1,17 +1,21 @@
 import {
   Injectable,
   InternalServerErrorException,
+  ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { ServiceZone, ZoneType } from './entities/service-zone.entity';
 import { CreateServiceZoneDto } from './dto/create-service-zone.dto';
 import { UpdateServiceZoneDto } from './dto/update-service-zone.dto';
+import { User, UserRole } from '../auth/entities/user.entity';
 
 export interface GeoCheckResult {
   inZone: boolean;
   zoneId?: string;
   zoneName?: string;
+  sellerId?: string;
   message?: string;
 }
 
@@ -21,7 +25,7 @@ export class GeoService {
     @InjectRepository(ServiceZone)
     private readonly serviceZoneRepository: Repository<ServiceZone>,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   async checkLocation(lat: number, lng: number): Promise<GeoCheckResult> {
     // Validate coordinates
@@ -63,6 +67,7 @@ export class GeoService {
           inZone: true,
           zoneId: zone.id,
           zoneName: zone.name,
+          sellerId: zone.sellerId ?? undefined,
         };
       }
     }
@@ -72,6 +77,60 @@ export class GeoService {
       message: "You're outside the service area",
     };
   }
+
+  /** Returns zones filtered by role: seller sees only own zones, superadmin sees all */
+  async getZones(user: User): Promise<ServiceZone[]> {
+    if (user.role === UserRole.SELLER) {
+      return this.serviceZoneRepository.find({ where: { sellerId: user.id } });
+    }
+    // superadmin — return all
+    return this.serviceZoneRepository.find();
+  }
+
+  /** Creates a zone and automatically assigns sellerId = user.id (for sellers) or allows specifying (for admins) */
+  async createZone(dto: CreateServiceZoneDto, user: User): Promise<ServiceZone> {
+    const sellerId = user.role === UserRole.SUPERADMIN ? (dto as any).sellerId || user.id : user.id;
+    const zone = this.serviceZoneRepository.create({ ...dto, sellerId });
+    return this.serviceZoneRepository.save(zone);
+  }
+
+  /** Updates a zone; seller can only update own zones and cannot change sellerId */
+  async updateZone(id: string, dto: UpdateServiceZoneDto, user: User): Promise<ServiceZone> {
+    const zone = await this.serviceZoneRepository.findOne({ where: { id } });
+    if (!zone) {
+      throw new NotFoundException('Zone not found');
+    }
+    if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
+      throw new ForbiddenException('You can only update your own zones');
+    }
+
+    const updateData = { ...dto };
+    if (user.role === UserRole.SELLER) {
+      delete (updateData as any).sellerId;
+    }
+
+    await this.serviceZoneRepository.update(id, updateData);
+    return this.serviceZoneRepository.findOne({ where: { id } });
+  }
+
+  /** Deletes a zone; seller can only delete own zones */
+  async deleteZone(id: string, user: User): Promise<void> {
+    const zone = await this.serviceZoneRepository.findOne({ where: { id } });
+    if (!zone) {
+      throw new NotFoundException('Zone not found');
+    }
+    if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
+      throw new ForbiddenException('You can only delete your own zones');
+    }
+    await this.deleteServiceZone(id);
+  }
+
+  /** Public method — returns all active zones without authentication */
+  async getPublicZones(): Promise<ServiceZone[]> {
+    return this.getActiveZones();
+  }
+
+  // ── Legacy methods kept for backward compatibility ──────────────────────────
 
   async createServiceZone(
     zoneData: CreateServiceZoneDto,
@@ -101,35 +160,55 @@ export class GeoService {
   }
 
   async deleteServiceZone(id: string): Promise<void> {
-    try {
-      await this.dataSource.query(
-        'ALTER TABLE orders ALTER COLUMN zone_id DROP NOT NULL',
-      );
-    } catch {
-      // Column may already be nullable
-    }
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
+
     try {
+      // 1. Ensure columns are nullable so we don't break on constraints
+      try {
+        await queryRunner.query('ALTER TABLE orders ALTER COLUMN zone_id DROP NOT NULL');
+      } catch (e) { /* ignore */ }
+
+      try {
+        await queryRunner.query('ALTER TABLE menu_items ALTER COLUMN zone_id DROP NOT NULL');
+      } catch (e) { /* ignore */ }
+
+      try {
+        await queryRunner.query('ALTER TABLE order_items ALTER COLUMN menu_item_id DROP NOT NULL');
+      } catch (e) { /* ignore */ }
+
+      // 2. Clear references in orders (we keep orders for history)
       await queryRunner.query(
         'UPDATE orders SET zone_id = NULL WHERE zone_id = $1',
         [id],
       );
+
+      // 3. Clear references in order_items for products we are about to delete
+      // We keep order_items but decouple them from the menu_item record
       await queryRunner.query(
-        'UPDATE menu_items SET zone_id = NULL WHERE zone_id = $1',
+        'UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id IN (SELECT id FROM menu_items WHERE zone_id = $1)',
         [id],
       );
+
+      // 4. Delete products tied to this zone (as requested by user)
+      await queryRunner.query(
+        'DELETE FROM menu_items WHERE zone_id = $1',
+        [id],
+      );
+
+      // 5. Finally delete the zone itself
       await queryRunner.query('DELETE FROM service_zones WHERE id = $1', [id]);
+
       await queryRunner.commitTransaction();
     } catch (err) {
-      await queryRunner.rollbackTransaction().catch(() => {});
+      await queryRunner.rollbackTransaction().catch(() => { });
       const message =
         err instanceof Error ? err.message : 'Failed to delete zone';
+      console.error('Error deleting zone:', err);
       throw new InternalServerErrorException(message);
     } finally {
-      await queryRunner.release().catch(() => {});
+      await queryRunner.release().catch(() => { });
     }
   }
 

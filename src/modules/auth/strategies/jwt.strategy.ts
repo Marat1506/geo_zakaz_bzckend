@@ -1,10 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../entities/user.entity';
+import { User, UserStatus } from '../entities/user.entity';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -20,7 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: any): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
     });
@@ -29,10 +33,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found');
     }
 
-    return {
-      userId: payload.sub,
-      email: payload.email,
-      role: payload.role,
-    };
+    if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+      throw new UnauthorizedException('Token has been invalidated');
+    }
+
+    if (user.status === UserStatus.PENDING) {
+      throw new ForbiddenException('Ваш аккаунт ожидает одобрения');
+    }
+
+    if (user.status === UserStatus.REJECTED) {
+      throw new ForbiddenException('Ваш запрос на регистрацию отклонен');
+    }
+
+    if (user.isBlocked) {
+      throw new ForbiddenException('Ваш аккаунт заблокирован');
+    }
+
+    return user;
   }
 }

@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { OrderItem } from './order-item.entity';
 import { ServiceZone } from '../../geo/entities/service-zone.entity';
+import { User } from '../../auth/entities/user.entity';
 
 export enum OrderStatus {
   PENDING_PAYMENT = 'pending_payment',
@@ -80,6 +81,19 @@ export class Order {
   @ManyToOne(() => ServiceZone, { nullable: true })
   @JoinColumn({ name: 'zone_id' })
   zone: ServiceZone | null;
+
+  @Column({ name: 'seller_id', nullable: true })
+  sellerId: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'seller_id' })
+  seller: User;
+
+  @Column({ name: 'customer_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  customerLat: number;
+
+  @Column({ name: 'customer_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  customerLng: number;
 
   @VersionColumn()
   version: number;

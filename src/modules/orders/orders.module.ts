@@ -7,6 +7,7 @@ import { OrderItem } from './entities/order-item.entity';
 import { GeoModule } from '../geo/geo.module';
 import { MenuModule } from '../menu/menu.module';
 import { FilesModule } from '../files/files.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { FilesModule } from '../files/files.module';
     GeoModule,
     MenuModule,
     FilesModule,
+    NotificationModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

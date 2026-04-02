@@ -6,12 +6,21 @@ import {
   UpdateDateColumn,
   BeforeInsert,
   BeforeUpdate,
+  OneToMany,
 } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 export enum UserRole {
   ADMIN = 'admin',
+  SUPERADMIN = 'superadmin',
+  SELLER = 'seller',
   CUSTOMER = 'customer',
+}
+
+export enum UserStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
 }
 
 @Entity('users')
@@ -38,11 +47,27 @@ export class User {
   })
   role: UserRole;
 
+  @Column({
+    type: 'enum',
+    enum: UserStatus,
+    default: UserStatus.APPROVED, // Default for customers (migration logic will handle old users)
+  })
+  status: UserStatus;
+
+  @Column({ name: 'is_blocked', default: false })
+  isBlocked: boolean;
+
+  @Column({ name: 'token_version', type: 'integer', default: 0 })
+  tokenVersion: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @OneToMany('ServiceZone', 'seller')
+  zones: any[];
 
   @BeforeInsert()
   @BeforeUpdate()
