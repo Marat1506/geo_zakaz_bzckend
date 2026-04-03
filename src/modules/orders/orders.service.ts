@@ -188,6 +188,7 @@ export class OrdersService {
       .leftJoinAndSelect('order.items', 'items')
       .leftJoinAndSelect('items.menuItem', 'menuItem')
       .leftJoinAndSelect('order.zone', 'zone')
+      .leftJoinAndSelect('order.seller', 'seller')
       .orderBy('order.createdAt', 'DESC');
 
     // Seller sees only their own orders
@@ -221,11 +222,13 @@ export class OrdersService {
   ): Promise<Order> {
     const order = await this.getOrder(id);
 
-    // Seller can only update their own orders
-    if (user?.role === UserRole.SELLER && order.sellerId !== user.id) {
-      throw new ForbiddenException(
-        'Вы можете обновлять статус только своих заказов',
-      );
+    // Only the seller who owns the order can update its status
+    if (user?.role === UserRole.SELLER || user?.role === UserRole.ADMIN) {
+      if (order.sellerId !== user.id) {
+        throw new ForbiddenException(
+          'Вы можете обновлять статус только своих заказов',
+        );
+      }
     }
 
     try {

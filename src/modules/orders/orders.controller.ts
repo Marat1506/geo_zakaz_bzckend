@@ -88,7 +88,7 @@ export class OrdersController {
 
   @Get('admin/list')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async getOrders(
     @Request() req: any,
     @Query('status') status?: OrderStatus,
@@ -105,7 +105,7 @@ export class OrdersController {
 
   @Patch('admin/:id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async updateOrderStatus(
     @Param('id') id: string,
     @Body() updateStatusDto: UpdateOrderStatusDto,

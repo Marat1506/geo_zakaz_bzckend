@@ -56,7 +56,7 @@ export class MenuController {
    */
   @Get('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async getAllItems(
     @Request() req,
     @Query('zoneId') zoneId?: string,
@@ -65,7 +65,7 @@ export class MenuController {
     if (user.role === UserRole.SELLER) {
       return this.menuService.getSellerItems(user, zoneId);
     }
-    // superadmin — return all items (optionally filtered by zone)
+    // admin/superadmin — return all items (optionally filtered by zone)
     if (zoneId) {
       return this.menuService.getItemsByZone(zoneId, false);
     }
@@ -75,7 +75,7 @@ export class MenuController {
 
   @Get('admin/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async getItem(@Param('id') id: string, @Request() req): Promise<MenuItem> {
     const item = await this.menuService.getMenuItem(id);
     if (req.user.role === UserRole.SELLER) {
@@ -90,7 +90,7 @@ export class MenuController {
    */
   @Post('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async createItem(
     @Body() createItemDto: CreateMenuItemDto,
     @Request() req,
@@ -100,7 +100,7 @@ export class MenuController {
 
   @Patch('admin/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async updateItem(
     @Param('id') id: string,
     @Body() updateItemDto: UpdateMenuItemDto,
@@ -114,7 +114,7 @@ export class MenuController {
 
   @Delete('admin/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async deleteItem(@Param('id') id: string, @Request() req): Promise<void> {
     if (req.user.role === UserRole.SELLER) {
       await this.menuService.verifyItemOwnership(id, req.user.id);
@@ -124,7 +124,7 @@ export class MenuController {
 
   @Patch('admin/:id/ready-now')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async toggleReadyNow(
     @Param('id') id: string,
     @Body() toggleDto: ToggleReadyNowDto,
@@ -138,7 +138,7 @@ export class MenuController {
 
   @Post('admin/upload')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(@UploadedFile() file: Express.Multer.File) {
     const result = await this.filesService.uploadFile(file, 'menu');
@@ -154,7 +154,7 @@ export class MenuController {
 
   @Post('admin/categories')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async createCategory(
     @Body() createCategoryDto: CreateCategoryDto,
   ): Promise<MenuCategory> {
@@ -163,7 +163,7 @@ export class MenuController {
 
   @Patch('admin/categories/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async updateCategory(
     @Param('id') id: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
@@ -173,7 +173,7 @@ export class MenuController {
 
   @Delete('admin/categories/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async deleteCategory(@Param('id') id: string): Promise<void> {
     return this.menuService.deleteCategory(id);
   }

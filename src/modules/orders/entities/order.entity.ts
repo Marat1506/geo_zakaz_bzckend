@@ -63,7 +63,7 @@ export class Order {
   @Column({ name: 'car_plate_number' })
   carPlateNumber: string;
 
-  @Column({ name: 'car_color' })
+  @Column({ name: 'car_color', nullable: true })
   carColor: string;
 
   @Column({ name: 'parking_spot', nullable: true })

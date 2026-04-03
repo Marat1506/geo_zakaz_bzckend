@@ -78,49 +78,49 @@ export class GeoService {
     };
   }
 
-  /** Returns zones filtered by role: seller sees only own zones, superadmin sees all */
+  /** Returns zones filtered by role: seller sees only own zones, admin/superadmin see all */
   async getZones(user: User): Promise<ServiceZone[]> {
     if (user.role === UserRole.SELLER) {
       return this.serviceZoneRepository.find({ where: { sellerId: user.id } });
     }
-    // superadmin — return all
+    // admin/superadmin — return all
     return this.serviceZoneRepository.find();
   }
 
-  /** Creates a zone and automatically assigns sellerId = user.id (for sellers) or allows specifying (for admins) */
+  /** Creates a zone — only sellers can create zones */
   async createZone(dto: CreateServiceZoneDto, user: User): Promise<ServiceZone> {
-    const sellerId = user.role === UserRole.SUPERADMIN ? (dto as any).sellerId || user.id : user.id;
-    const zone = this.serviceZoneRepository.create({ ...dto, sellerId });
+    if (user.role !== UserRole.SELLER) {
+      throw new ForbiddenException('Только продавцы могут создавать зоны');
+    }
+    const zone = this.serviceZoneRepository.create({ ...dto, sellerId: user.id });
     return this.serviceZoneRepository.save(zone);
   }
 
-  /** Updates a zone; seller can only update own zones and cannot change sellerId */
+  /** Updates a zone — only the seller who owns it can update */
   async updateZone(id: string, dto: UpdateServiceZoneDto, user: User): Promise<ServiceZone> {
     const zone = await this.serviceZoneRepository.findOne({ where: { id } });
     if (!zone) {
       throw new NotFoundException('Zone not found');
     }
-    if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
-      throw new ForbiddenException('You can only update your own zones');
+    if (user.role !== UserRole.SELLER || zone.sellerId !== user.id) {
+      throw new ForbiddenException('Вы можете редактировать только свои зоны');
     }
 
     const updateData = { ...dto };
-    if (user.role === UserRole.SELLER) {
-      delete (updateData as any).sellerId;
-    }
+    delete (updateData as any).sellerId;
 
     await this.serviceZoneRepository.update(id, updateData);
     return this.serviceZoneRepository.findOne({ where: { id } });
   }
 
-  /** Deletes a zone; seller can only delete own zones */
+  /** Deletes a zone — only the seller who owns it can delete */
   async deleteZone(id: string, user: User): Promise<void> {
     const zone = await this.serviceZoneRepository.findOne({ where: { id } });
     if (!zone) {
       throw new NotFoundException('Zone not found');
     }
-    if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
-      throw new ForbiddenException('You can only delete your own zones');
+    if (user.role !== UserRole.SELLER || zone.sellerId !== user.id) {
+      throw new ForbiddenException('Вы можете удалять только свои зоны');
     }
     await this.deleteServiceZone(id);
   }

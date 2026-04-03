@@ -44,14 +44,14 @@ export class GeoController {
 
   @Get('zones')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN)
+  @Roles(UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
   async getZones(@Request() req): Promise<ServiceZone[]> {
     return this.geoService.getZones(req.user);
   }
 
   @Post('zones')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
+  @Roles(UserRole.SELLER)
   async createZone(
     @Body() createZoneDto: CreateServiceZoneDto,
     @Request() req,
@@ -61,7 +61,7 @@ export class GeoController {
 
   @Patch('zones/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
+  @Roles(UserRole.SELLER)
   async updateZone(
     @Param('id') id: string,
     @Body() updateZoneDto: UpdateServiceZoneDto,
@@ -72,7 +72,7 @@ export class GeoController {
 
   @Delete('zones/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.SUPERADMIN, UserRole.ADMIN)
+  @Roles(UserRole.SELLER)
   async deleteZone(@Param('id') id: string, @Request() req): Promise<void> {
     return this.geoService.deleteZone(id, req.user);
   }

@@ -61,7 +61,7 @@ export class AuthController {
 
   @Get('sellers')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async getSellers() {
     return this.authService.getSellers();
   }
@@ -69,35 +69,35 @@ export class AuthController {
   @Post('sellers')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async createSeller(@Body() dto: CreateSellerDto) {
     return this.authService.createSeller(dto);
   }
 
   @Patch('sellers/:id/block')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async blockSeller(@Param('id') id: string) {
     return this.authService.blockSeller(id);
   }
 
   @Patch('sellers/:id/unblock')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async unblockSeller(@Param('id') id: string) {
     return this.authService.unblockSeller(id);
   }
 
   @Patch('sellers/:id/approve')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async approveSeller(@Param('id') id: string) {
     return this.authService.approveSeller(id);
   }
 
   @Patch('sellers/:id/reject')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async rejectSeller(@Param('id') id: string) {
     return this.authService.rejectSeller(id);
   }
