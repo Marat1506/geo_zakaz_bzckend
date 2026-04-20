@@ -48,6 +48,12 @@ export class MenuController {
     return this.menuService.getItemsByZone(zoneId, true);
   }
 
+  /** Public single item — returns item details with reviews info */
+  @Get('items/:id')
+  async getPublicItem(@Param('id') id: string): Promise<MenuItem> {
+    return this.menuService.getMenuItem(id);
+  }
+
   // ── Admin/Seller endpoints ──────────────────────────────────────────────────
 
   /**

@@ -5,11 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { ServiceZone, ZoneType } from './entities/service-zone.entity';
 import { CreateServiceZoneDto } from './dto/create-service-zone.dto';
 import { UpdateServiceZoneDto } from './dto/update-service-zone.dto';
 import { User, UserRole } from '../auth/entities/user.entity';
+import { Order, OrderStatus } from '../orders/entities/order.entity';
 
 export interface GeoCheckResult {
   inZone: boolean;
@@ -24,6 +25,8 @@ export class GeoService {
   constructor(
     @InjectRepository(ServiceZone)
     private readonly serviceZoneRepository: Repository<ServiceZone>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     private readonly dataSource: DataSource,
   ) { }
 
@@ -122,6 +125,23 @@ export class GeoService {
     if (user.role !== UserRole.SELLER || zone.sellerId !== user.id) {
       throw new ForbiddenException('Вы можете удалять только свои зоны');
     }
+
+    const activeOrders = await this.orderRepository.count({
+      where: {
+        zoneId: id,
+        status: In([
+          OrderStatus.PENDING_PAYMENT,
+          OrderStatus.PREPARING,
+          OrderStatus.ON_THE_WAY,
+        ]),
+      },
+    });
+    if (activeOrders > 0) {
+      throw new ForbiddenException(
+        `Нельзя удалить зону: в ней есть незакрытые заказы (${activeOrders}). Завершите или отмените их сначала.`,
+      );
+    }
+
     await this.deleteServiceZone(id);
   }
 

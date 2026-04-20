@@ -1,11 +1,13 @@
 import {
   Controller, Post, Get, Patch, Body, HttpCode, HttpStatus,
-  UseGuards, Request, Param,
+  UseGuards, Request, Param, UseInterceptors, UploadedFiles, BadRequestException,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AuthService, AuthResponse, CreateSellerDto } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -13,19 +15,68 @@ import { UserRole } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { FilesService } from '../files/files.service';
+import { QrCodeService } from '../qrcode/qrcode.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly filesService: FilesService,
+    private readonly qrCodeService: QrCodeService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) { }
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  async register(@Body() registerDto: RegisterDto): Promise<AuthResponse> {
-    return this.authService.register(registerDto);
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'passportMain', maxCount: 1 },
+    { name: 'passportRegistration', maxCount: 1 },
+    { name: 'selfie', maxCount: 1 },
+  ], { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async register(
+    @Body() body: any,
+    @UploadedFiles() files: {
+      passportMain?: Express.Multer.File[];
+      passportRegistration?: Express.Multer.File[];
+      selfie?: Express.Multer.File[];
+    },
+  ): Promise<AuthResponse> {
+    const registerDto: RegisterDto = {
+      email: body.email,
+      password: body.password,
+      name: body.name,
+      phone: body.phone,
+      role: body.role as UserRole,
+    };
+
+    // For seller registration, documents are required
+    if (registerDto.role === UserRole.SELLER) {
+      if (!files?.passportMain?.[0] || !files?.passportRegistration?.[0] || !files?.selfie?.[0]) {
+        throw new BadRequestException('Для регистрации продавца необходимо загрузить все документы');
+      }
+    }
+
+    // Upload documents if provided
+    let passportMainUrl: string | null = null;
+    let passportRegistrationUrl: string | null = null;
+    let selfieUrl: string | null = null;
+
+    if (files?.passportMain?.[0]) {
+      const result = await this.filesService.uploadFile(files.passportMain[0], 'seller-docs');
+      passportMainUrl = result.url;
+    }
+    if (files?.passportRegistration?.[0]) {
+      const result = await this.filesService.uploadFile(files.passportRegistration[0], 'seller-docs');
+      passportRegistrationUrl = result.url;
+    }
+    if (files?.selfie?.[0]) {
+      const result = await this.filesService.uploadFile(files.selfie[0], 'seller-docs');
+      selfieUrl = result.url;
+    }
+
+    return this.authService.register(registerDto, { passportMainUrl, passportRegistrationUrl, selfieUrl });
   }
 
   @Post('login')
@@ -100,5 +151,65 @@ export class AuthController {
   @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
   async rejectSeller(@Param('id') id: string) {
     return this.authService.rejectSeller(id);
+  }
+
+  // Seller profile endpoints
+  @Get('seller/profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
+  async getSellerProfile(@Request() req: any) {
+    return this.authService.getSellerProfile(req.user.id);
+  }
+
+  @Patch('seller/profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
+  async updateSellerProfile(@Request() req: any, @Body() dto: UpdateSellerProfileDto) {
+    return this.authService.updateSellerProfile(req.user.id, dto);
+  }
+
+  // Public endpoint for referral links
+  @Get('seller/slug/:slug')
+  async getSellerBySlug(@Param('slug') slug: string) {
+    return this.authService.getSellerBySlug(slug);
+  }
+
+  // Generate business card with QR code
+  @Get('seller/business-card')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
+  async generateBusinessCard(@Request() req: any) {
+    const user = await this.userRepository.findOne({ where: { id: req.user.id } });
+    if (!user || !user.slug) {
+      throw new BadRequestException('Please set up your shop profile and slug first');
+    }
+
+    const html = await this.qrCodeService.generateBusinessCard({
+      name: user.name,
+      shopName: user.shopName,
+      shopDescription: user.shopDescription,
+      shopLogo: user.shopLogo,
+      contactPhone: user.contactPhone,
+      contactEmail: user.contactEmail,
+      slug: user.slug,
+    });
+
+    return { html };
+  }
+
+  // Get QR code only
+  @Get('seller/qr-code')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SELLER)
+  async getQRCode(@Request() req: any) {
+    const user = await this.userRepository.findOne({ where: { id: req.user.id } });
+    if (!user || !user.slug) {
+      throw new BadRequestException('Please set up your slug first');
+    }
+
+    const referralUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/ref/${user.slug}`;
+    const qrCode = await this.qrCodeService.generateQRCode(referralUrl);
+
+    return { qrCode, referralUrl };
   }
 }

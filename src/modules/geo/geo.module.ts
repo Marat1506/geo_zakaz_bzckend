@@ -6,10 +6,11 @@ import { redisStore } from 'cache-manager-redis-yet';
 import { GeoController } from './geo.controller';
 import { GeoService } from './geo.service';
 import { ServiceZone } from './entities/service-zone.entity';
+import { Order } from '../orders/entities/order.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ServiceZone]),
+    TypeOrmModule.forFeature([ServiceZone, Order]),
     CacheModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({

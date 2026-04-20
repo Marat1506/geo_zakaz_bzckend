@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { User, UserRole, UserStatus } from './entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto';
 
 export interface CreateSellerDto {
   email: string;
@@ -88,7 +90,11 @@ export class AuthService {
     };
   }
 
-  async register(registerDto: RegisterDto): Promise<AuthResponse> {
+  async register(registerDto: RegisterDto, docs?: {
+    passportMainUrl?: string | null;
+    passportRegistrationUrl?: string | null;
+    selfieUrl?: string | null;
+  }): Promise<AuthResponse> {
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
@@ -114,6 +120,9 @@ export class AuthService {
       role: requestedRole,
       status: status,
       passwordHash: registerDto.password, // Will be hashed by @BeforeInsert
+      passportMainUrl: docs?.passportMainUrl ?? null,
+      passportRegistrationUrl: docs?.passportRegistrationUrl ?? null,
+      selfieUrl: docs?.selfieUrl ?? null,
     });
 
     // Save user (password will be hashed automatically)
@@ -201,11 +210,23 @@ export class AuthService {
     }
   }
 
-  async getSellers(): Promise<User[]> {
-    return this.userRepository.find({
+  async getSellers(): Promise<Partial<User>[]> {
+    const sellers = await this.userRepository.find({
       where: { role: UserRole.SELLER },
       order: { createdAt: 'DESC' },
     });
+    return sellers.map(s => ({
+      id: s.id,
+      email: s.email,
+      name: s.name,
+      phone: s.phone,
+      status: s.status,
+      isBlocked: s.isBlocked,
+      createdAt: s.createdAt,
+      passportMainUrl: s.passportMainUrl,
+      passportRegistrationUrl: s.passportRegistrationUrl,
+      selfieUrl: s.selfieUrl,
+    }));
   }
 
   async approveSeller(id: string): Promise<User> {
@@ -263,6 +284,94 @@ export class AuthService {
 
     user.isBlocked = false;
     return this.userRepository.save(user);
+  }
+
+  async updateSellerProfile(userId: string, dto: UpdateSellerProfileDto): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role !== UserRole.SELLER) {
+      throw new BadRequestException('Only sellers can update seller profile');
+    }
+
+    // Check if slug is unique
+    if (dto.slug && dto.slug !== user.slug) {
+      const existingSlug = await this.userRepository.findOne({ where: { slug: dto.slug } });
+      if (existingSlug) {
+        throw new ConflictException('This slug is already taken');
+      }
+    }
+
+    // Update fields
+    if (dto.shopName !== undefined) user.shopName = dto.shopName;
+    if (dto.shopDescription !== undefined) user.shopDescription = dto.shopDescription;
+    if (dto.shopLogo !== undefined) user.shopLogo = dto.shopLogo;
+    if (dto.contactPhone !== undefined) user.contactPhone = dto.contactPhone;
+    if (dto.contactEmail !== undefined) user.contactEmail = dto.contactEmail;
+    if (dto.contactAddress !== undefined) user.contactAddress = dto.contactAddress;
+    if (dto.slug !== undefined) user.slug = dto.slug;
+
+    // Generate referral code if not exists
+    if (!user.referralCode) {
+      user.referralCode = this.generateReferralCode();
+    }
+
+    return this.userRepository.save(user);
+  }
+
+  async getSellerProfile(userId: string): Promise<Partial<User>> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      shopName: user.shopName,
+      shopDescription: user.shopDescription,
+      shopLogo: user.shopLogo,
+      contactPhone: user.contactPhone,
+      contactEmail: user.contactEmail,
+      contactAddress: user.contactAddress,
+      slug: user.slug,
+      referralCode: user.referralCode,
+      referralVisits: user.referralVisits,
+      referralOrders: user.referralOrders,
+    };
+  }
+
+  async getSellerBySlug(slug: string): Promise<Partial<User>> {
+    const user = await this.userRepository.findOne({
+      where: { slug, role: UserRole.SELLER, status: UserStatus.APPROVED }
+    });
+
+    if (!user) {
+      throw new NotFoundException('Seller not found');
+    }
+
+    // Increment referral visits
+    user.referralVisits += 1;
+    await this.userRepository.save(user);
+
+    return {
+      id: user.id,
+      name: user.name,
+      shopName: user.shopName,
+      shopDescription: user.shopDescription,
+      shopLogo: user.shopLogo,
+      contactPhone: user.contactPhone,
+      contactEmail: user.contactEmail,
+      slug: user.slug,
+    };
+  }
+
+  private generateReferralCode(): string {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
   }
 
   private async generateTokens(user: User): Promise<{

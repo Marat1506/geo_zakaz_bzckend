@@ -7,11 +7,15 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { User } from './entities/user.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { FilesModule } from '../files/files.module';
+import { QrCodeModule } from '../qrcode/qrcode.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    FilesModule,
+    QrCodeModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

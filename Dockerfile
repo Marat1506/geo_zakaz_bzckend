@@ -31,6 +31,10 @@ COPY --from=builder /app/dist ./dist
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
 
+# Create uploads directories with proper permissions
+RUN mkdir -p /app/uploads/menu /app/uploads/car-photos /app/uploads/shop-logos && \
+    chown -R nestjs:nodejs /app/uploads
+
 # Change ownership
 RUN chown -R nestjs:nodejs /app
 

@@ -12,6 +12,8 @@ import { MenuModule } from './modules/menu/menu.module';
 import { FilesModule } from './modules/files/files.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
+import { QrCodeModule } from './modules/qrcode/qrcode.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { NotificationModule } from './modules/notifications/notification.module'
     FilesModule,
     OrdersModule,
     NotificationModule,
+    ReviewsModule,
+    QrCodeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

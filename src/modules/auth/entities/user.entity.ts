@@ -57,8 +57,49 @@ export class User {
   @Column({ name: 'is_blocked', default: false })
   isBlocked: boolean;
 
+  @Column({ name: 'passport_main_url', nullable: true })
+  passportMainUrl: string | null;
+
+  @Column({ name: 'passport_registration_url', nullable: true })
+  passportRegistrationUrl: string | null;
+
+  @Column({ name: 'selfie_url', nullable: true })
+  selfieUrl: string | null;
+
   @Column({ name: 'token_version', type: 'integer', default: 0 })
   tokenVersion: number;
+
+  // Seller profile fields
+  @Column({ name: 'shop_name', nullable: true })
+  shopName: string | null;
+
+  @Column({ name: 'shop_description', type: 'text', nullable: true })
+  shopDescription: string | null;
+
+  @Column({ name: 'shop_logo', nullable: true })
+  shopLogo: string | null;
+
+  @Column({ name: 'contact_phone', nullable: true })
+  contactPhone: string | null;
+
+  @Column({ name: 'contact_email', nullable: true })
+  contactEmail: string | null;
+
+  @Column({ name: 'contact_address', type: 'text', nullable: true })
+  contactAddress: string | null;
+
+  // Referral fields
+  @Column({ unique: true, nullable: true })
+  slug: string | null;
+
+  @Column({ name: 'referral_code', unique: true, nullable: true })
+  referralCode: string | null;
+
+  @Column({ name: 'referral_visits', type: 'integer', default: 0 })
+  referralVisits: number;
+
+  @Column({ name: 'referral_orders', type: 'integer', default: 0 })
+  referralOrders: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
