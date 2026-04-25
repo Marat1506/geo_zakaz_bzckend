@@ -25,10 +25,13 @@ export class QrCodeService {
   /** Absolute URL for images in downloaded HTML (relative /uploads/... is broken as file://) */
   private resolvePublicAssetUrl(pathOrUrl: string | null | undefined): string {
     if (!pathOrUrl) return '';
-    const base = (process.env.PUBLIC_BACKEND_URL || process.env.BACKEND_PUBLIC_URL || 'http://localhost:3000').replace(
-      /\/$/,
-      '',
-    );
+    const fallbackBackendBase =
+      process.env.NODE_ENV === 'production' ? 'https://lotfood.ru' : 'http://localhost:3000';
+    const base = (
+      process.env.PUBLIC_BACKEND_URL ||
+      process.env.BACKEND_PUBLIC_URL ||
+      fallbackBackendBase
+    ).replace(/\/$/, '');
 
     // Keep data URLs unchanged.
     if (pathOrUrl.startsWith('data:')) {
