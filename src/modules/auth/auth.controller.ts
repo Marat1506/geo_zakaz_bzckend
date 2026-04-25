@@ -20,6 +20,16 @@ import { QrCodeService } from '../qrcode/qrcode.service';
 
 @Controller('auth')
 export class AuthController {
+  private getFrontendBaseUrl(): string {
+    const fallback =
+      process.env.NODE_ENV === 'production' ? 'https://lotfood.ru' : 'http://localhost:3001';
+    return (
+      process.env.FRONTEND_URL ||
+      process.env.PUBLIC_FRONTEND_URL ||
+      fallback
+    ).replace(/\/$/, '');
+  }
+
   constructor(
     private readonly authService: AuthService,
     private readonly filesService: FilesService,
@@ -207,7 +217,7 @@ export class AuthController {
       throw new BadRequestException('Please set up your slug first');
     }
 
-    const referralUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/ref/${user.slug}`;
+    const referralUrl = `${this.getFrontendBaseUrl()}/ref/${user.slug}`;
     const qrCode = await this.qrCodeService.generateQRCode(referralUrl);
 
     return { qrCode, referralUrl };

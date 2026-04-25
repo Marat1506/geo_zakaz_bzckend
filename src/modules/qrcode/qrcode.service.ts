@@ -3,6 +3,16 @@ import * as QRCode from 'qrcode';
 
 @Injectable()
 export class QrCodeService {
+  private getFrontendBaseUrl(): string {
+    const fallback =
+      process.env.NODE_ENV === 'production' ? 'https://lotfood.ru' : 'http://localhost:3001';
+    return (
+      process.env.FRONTEND_URL ||
+      process.env.PUBLIC_FRONTEND_URL ||
+      fallback
+    ).replace(/\/$/, '');
+  }
+
   private escapeHtml(text: string | null | undefined): string {
     if (text == null || text === '') return '';
     return String(text)
@@ -70,7 +80,7 @@ export class QrCodeService {
     contactEmail: string;
     slug: string;
   }): Promise<string> {
-    const referralUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/ref/${seller.slug}`;
+    const referralUrl = `${this.getFrontendBaseUrl()}/ref/${seller.slug}`;
     const qrCode = await this.generateQRCode(referralUrl);
     const logoSrc = this.resolvePublicAssetUrl(seller.shopLogo);
 
