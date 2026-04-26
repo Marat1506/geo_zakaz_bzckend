@@ -71,7 +71,6 @@ curl http://localhost:3000/api/menu
 ```bash
 curl -X POST http://localhost:3000/api/orders \
   -F 'carPlateNumber=ABC123' \
-  -F 'carColor=red' \
   -F 'customerLat=40.7128' \
   -F 'customerLng=-74.006' \
   -F 'paymentMethod=cash' \

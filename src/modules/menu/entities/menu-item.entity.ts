@@ -38,10 +38,10 @@ export class MenuItem {
   @Column({ length: 50, nullable: true })
   category: string;
 
-  @Column({ name: 'zone_id', nullable: true })
+  @Column({ name: 'zone_id' })
   zoneId: string;
 
-  @ManyToOne(() => ServiceZone, { nullable: true })
+  @ManyToOne(() => ServiceZone, { nullable: false })
   @JoinColumn({ name: 'zone_id' })
   zone: ServiceZone;
 

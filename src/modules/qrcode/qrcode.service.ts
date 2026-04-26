@@ -93,18 +93,23 @@ export class QrCodeService {
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       margin: 0;
-      padding: 20px;
+      padding: 12px;
       font-family: Arial, sans-serif;
       background: #f5f5f5;
     }
     .card {
-      width: 600px;
+      width: 100%;
+      max-width: 600px;
       background: white;
       border-radius: 16px;
-      padding: 40px;
+      padding: 28px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.1);
       margin: 0 auto;
     }
@@ -177,6 +182,24 @@ export class QrCodeService {
       font-size: 14px;
       color: #666;
       margin-top: 15px;
+    }
+    @media (max-width: 640px) {
+      body {
+        padding: 0;
+      }
+      .card {
+        min-height: 100vh;
+        border-radius: 0;
+        padding: 20px 16px;
+        box-shadow: none;
+      }
+      .shop-name {
+        font-size: 28px;
+      }
+      .qr-code img {
+        width: 220px;
+        height: 220px;
+      }
     }
   </style>
 </head>

@@ -14,13 +14,24 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
+  const allowedOriginsEnv = configService.get<string>('ALLOWED_ORIGINS');
+  const allowedOrigins = (allowedOriginsEnv || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  if (allowedOrigins.length === 0) {
+    throw new Error(
+      'ALLOWED_ORIGINS must be set when CORS credentials are enabled',
+    );
+  }
 
   // Global prefix
   app.setGlobalPrefix('api');
 
   // CORS
   app.enableCors({
-    origin: configService.get('ALLOWED_ORIGINS')?.split(',') || '*',
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],

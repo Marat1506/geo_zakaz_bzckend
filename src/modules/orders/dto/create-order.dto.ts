@@ -27,9 +27,6 @@ export class CreateOrderDto {
   @Matches(/^[A-Z0-9-]+$/i)
   carPlateNumber: string;
 
-  @IsEnum(['red', 'blue', 'white', 'black', 'silver', 'gray', 'other'])
-  carColor: string;
-
   @IsOptional()
   @IsString()
   @Length(1, 20)
@@ -51,8 +48,4 @@ export class CreateOrderDto {
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
-
-  @IsOptional()
-  @IsString()
-  customerId?: string;
 }

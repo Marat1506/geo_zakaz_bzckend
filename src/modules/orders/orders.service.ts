@@ -35,6 +35,7 @@ export class OrdersService {
   async createOrder(
     orderData: CreateOrderDto,
     carPhoto: Express.Multer.File,
+    customerId: string,
   ): Promise<Order> {
     // Check geolocation
     const geoCheck = await this.geoService.checkLocation(
@@ -107,13 +108,10 @@ export class OrdersService {
     // Calculate ETA
     const estimatedTime = this.calculateETA(orderItems, menuItems);
 
-    // Generate order number
-    const orderNumber = await this.generateOrderNumber();
-
     // Create order in transaction
     const order = await this.dataSource.transaction(async (manager) => {
       const newOrder = manager.create(Order, {
-        orderNumber,
+        orderNumber: '',
         totalAmount,
         status:
           orderData.paymentMethod === PaymentMethod.CASH
@@ -121,7 +119,6 @@ export class OrdersService {
             : OrderStatus.PENDING_PAYMENT,
         paymentMethod: orderData.paymentMethod,
         carPlateNumber: orderData.carPlateNumber,
-        carColor: orderData.carColor,
         parkingSpot: orderData.parkingSpot,
         carPhotoUrl: carPhotoResult.url,
         estimatedTime,
@@ -129,10 +126,25 @@ export class OrdersService {
         sellerId: geoCheck.sellerId,
         customerLat: orderData.customerLat,
         customerLng: orderData.customerLng,
-        customerId: orderData.customerId,
+        customerId,
       });
 
-      const savedOrder = await manager.save(Order, newOrder);
+      let savedOrder: Order | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          newOrder.orderNumber = await this.generateOrderNumber();
+          savedOrder = await manager.save(Order, newOrder);
+          break;
+        } catch (error: any) {
+          if (error?.code === '23505' && attempt < 3) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (!savedOrder) {
+        throw new ConflictException('Could not generate unique order number');
+      }
 
       // Create order items
       for (const item of orderItems) {
@@ -171,6 +183,27 @@ export class OrdersService {
 
     if (!order) {
       throw new NotFoundException('Order not found');
+    }
+
+    return order;
+  }
+
+  async getOrderForUser(id: string, user: User): Promise<Order> {
+    const order = await this.getOrder(id);
+
+    if (user.role === UserRole.ADMIN || user.role === UserRole.SUPERADMIN) {
+      return order;
+    }
+
+    if (user.role === UserRole.SELLER) {
+      if (order.sellerId !== user.id) {
+        throw new ForbiddenException('Вы можете просматривать только свои заказы');
+      }
+      return order;
+    }
+
+    if (order.customerId !== user.id) {
+      throw new ForbiddenException('Вы можете просматривать только свои заказы');
     }
 
     return order;
@@ -222,8 +255,8 @@ export class OrdersService {
   ): Promise<Order> {
     const order = await this.getOrder(id);
 
-    // Only the seller who owns the order can update its status
-    if (user?.role === UserRole.SELLER || user?.role === UserRole.ADMIN) {
+    // Seller can update only own orders. Admin/superadmin can update all orders.
+    if (user?.role === UserRole.SELLER) {
       if (order.sellerId !== user.id) {
         throw new ForbiddenException(
           'Вы можете обновлять статус только своих заказов',
@@ -311,8 +344,12 @@ export class OrdersService {
       })
       .getCount();
 
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 1000)
+      .toString()
+      .padStart(3, '0');
     const sequence = (count + 1).toString().padStart(4, '0');
 
-    return `ORD-${dateStr}-${sequence}`;
+    return `ORD-${dateStr}-${sequence}-${timestamp}${random}`;
   }
 }

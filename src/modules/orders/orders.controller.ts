@@ -13,6 +13,8 @@ import {
   Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -27,6 +29,8 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER)
   @UseInterceptors(
     FileInterceptor('carPhoto', {
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
@@ -44,6 +48,7 @@ export class OrdersController {
   async createOrder(
     @Body() body: any,
     @UploadedFile() carPhoto: Express.Multer.File,
+    @Request() req: any,
   ): Promise<Order> {
     if (!carPhoto) {
       throw new BadRequestException('Car photo is required');
@@ -67,23 +72,27 @@ export class OrdersController {
       throw new BadRequestException('Invalid coordinates');
     }
 
-    const createOrderDto: CreateOrderDto = {
+    const createOrderDto = plainToInstance(CreateOrderDto, {
       items,
       carPlateNumber: body.carPlateNumber,
-      carColor: body.carColor,
       parkingSpot: body.parkingSpot,
       customerLat,
       customerLng,
       paymentMethod: body.paymentMethod,
-      customerId: body.customerId, // Add customerId from request
-    };
+    });
 
-    return this.ordersService.createOrder(createOrderDto, carPhoto);
-  }
+    const validationErrors = validateSync(createOrderDto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    if (validationErrors.length > 0) {
+      const messages = validationErrors.flatMap((error) =>
+        error.constraints ? Object.values(error.constraints) : [`Invalid field: ${error.property}`],
+      );
+      throw new BadRequestException(messages);
+    }
 
-  @Get(':id')
-  async getOrder(@Param('id') id: string): Promise<Order> {
-    return this.ordersService.getOrder(id);
+    return this.ordersService.createOrder(createOrderDto, carPhoto, req.user.id);
   }
 
   @Get('admin/list')
@@ -100,7 +109,14 @@ export class OrdersController {
   @Get('customer/my-orders')
   @UseGuards(JwtAuthGuard)
   async getMyOrders(@Request() req: any): Promise<Order[]> {
-    return this.ordersService.getOrdersByCustomer(req.user.sub);
+    return this.ordersService.getOrdersByCustomer(req.user.id);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CUSTOMER, UserRole.SELLER, UserRole.ADMIN, UserRole.SUPERADMIN)
+  async getOrder(@Param('id') id: string, @Request() req: any): Promise<Order> {
+    return this.ordersService.getOrderForUser(id, req.user);
   }
 
   @Patch('admin/:id/status')

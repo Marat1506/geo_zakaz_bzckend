@@ -68,7 +68,7 @@ export class InitialSchema1700000000000 implements MigrationInterface {
         "payment_method" varchar NOT NULL,
         "payment_intent_id" varchar,
         "car_plate_number" varchar NOT NULL,
-        "car_color" varchar NOT NULL,
+        "car_color" varchar,
         "parking_spot" varchar,
         "car_photo_url" varchar NOT NULL,
         "estimated_time" integer NOT NULL,

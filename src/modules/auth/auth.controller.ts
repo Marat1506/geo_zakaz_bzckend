@@ -1,6 +1,6 @@
 import {
   Controller, Post, Get, Patch, Body, HttpCode, HttpStatus,
-  UseGuards, Request, Param, UseInterceptors, UploadedFiles, BadRequestException,
+  UseGuards, Request, Param, UseInterceptors, UploadedFiles, BadRequestException, Req, Res,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AuthService, AuthResponse, CreateSellerDto } from './auth.service';
@@ -17,9 +17,59 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { FilesService } from '../files/files.service';
 import { QrCodeService } from '../qrcode/qrcode.service';
+import { Request as ExpressRequest, Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
+  private shouldUseSecureCookies(): boolean {
+    if (process.env.AUTH_COOKIE_SECURE === 'true') {
+      return true;
+    }
+    if (process.env.AUTH_COOKIE_SECURE === 'false') {
+      return false;
+    }
+    const frontendUrl =
+      process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || '';
+    return /^https:\/\//i.test(frontendUrl);
+  }
+
+  private getCookieOptions(maxAgeMs: number) {
+    return {
+      httpOnly: true,
+      secure: this.shouldUseSecureCookies(),
+      sameSite: 'lax' as const,
+      path: '/',
+      maxAge: maxAgeMs,
+    };
+  }
+
+  private readCookie(req: ExpressRequest, cookieName: string): string | undefined {
+    const rawCookie = req.headers.cookie;
+    if (!rawCookie) {
+      return undefined;
+    }
+    const cookie = rawCookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${cookieName}=`));
+    if (!cookie) {
+      return undefined;
+    }
+    return decodeURIComponent(cookie.slice(cookieName.length + 1));
+  }
+
+  private setAuthCookies(res: Response, auth: AuthResponse) {
+    res.cookie('accessToken', auth.accessToken, this.getCookieOptions(60 * 60 * 1000));
+    res.cookie('refreshToken', auth.refreshToken, this.getCookieOptions(7 * 24 * 60 * 60 * 1000));
+    res.cookie('userRole', auth.user.role, {
+      httpOnly: false,
+      secure: this.shouldUseSecureCookies(),
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 1000,
+    });
+  }
+
   private getFrontendBaseUrl(): string {
     const fallback =
       process.env.NODE_ENV === 'production' ? 'https://lotfood.ru' : 'http://localhost:3001';
@@ -91,14 +141,42 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto): Promise<AuthResponse> {
-    return this.authService.login(loginDto);
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const auth = await this.authService.login(loginDto);
+    this.setAuthCookies(res, auth);
+    return auth;
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<AuthResponse> {
-    return this.authService.refreshToken(refreshTokenDto.refreshToken);
+  async refresh(
+    @Body() refreshTokenDto: Partial<RefreshTokenDto>,
+    @Req() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const tokenFromBody = refreshTokenDto?.refreshToken;
+    const tokenFromCookie = this.readCookie(req, 'refreshToken');
+    const refreshToken = tokenFromBody || tokenFromCookie;
+
+    if (!refreshToken) {
+      throw new BadRequestException('Refresh token is required');
+    }
+
+    const auth = await this.authService.refreshToken(refreshToken);
+    this.setAuthCookies(res, auth);
+    return auth;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(@Res({ passthrough: true }) res: Response): Promise<{ success: true }> {
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+    res.clearCookie('userRole', { path: '/' });
+    return { success: true };
   }
 
   @Get('me')

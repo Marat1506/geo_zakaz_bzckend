@@ -114,18 +114,16 @@ export class MenuService {
   }
 
   async createMenuItem(itemData: CreateMenuItemDto, user?: User): Promise<MenuItem> {
-    // If user is provided, verify zone ownership
-    if (user && itemData.zoneId) {
-      const zone = await this.serviceZoneRepository.findOne({
-        where: { id: itemData.zoneId },
-      });
-      if (!zone) {
-        throw new NotFoundException('Zone not found');
-      }
-      // Seller can only create items in their own zones; superadmin can create in any zone
-      if (user.role === UserRole.SELLER && zone.sellerId !== user.id) {
-        throw new ForbiddenException('You can only add items to your own zones');
-      }
+    const zone = await this.serviceZoneRepository.findOne({
+      where: { id: itemData.zoneId },
+    });
+    if (!zone) {
+      throw new NotFoundException('Zone not found');
+    }
+
+    // Seller can only create items in their own zones; admin/superadmin can create in any zone
+    if (user && user.role === UserRole.SELLER && zone.sellerId !== user.id) {
+      throw new ForbiddenException('You can only add items to your own zones');
     }
 
     // If category is provided, handle it

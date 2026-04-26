@@ -12,12 +12,19 @@ export class MakeMenuItemZoneIdRequired1700000000013
     `);
 
     if (columnInfo.length && columnInfo[0].is_nullable === 'YES') {
-      // Fill NULL zone_ids with the first available service zone
-      await queryRunner.query(`
-        UPDATE "menu_items"
-          SET "zone_id" = (SELECT "id" FROM "service_zones" LIMIT 1)
-          WHERE "zone_id" IS NULL
+      // Do not auto-assign to an arbitrary zone; fail fast for manual correction.
+      const [{ count: nullCount }] = await queryRunner.query(`
+        SELECT COUNT(*)::int AS count
+        FROM "menu_items"
+        WHERE "zone_id" IS NULL
       `);
+
+      if (Number(nullCount) > 0) {
+        throw new Error(
+          'Migration blocked: menu_items has rows with NULL zone_id. ' +
+            'Please assign each menu item to a valid service zone before applying NOT NULL.',
+        );
+      }
 
       // Set NOT NULL constraint
       await queryRunner.query(`

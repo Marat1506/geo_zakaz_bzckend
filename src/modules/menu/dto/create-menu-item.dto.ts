@@ -43,7 +43,6 @@ export class CreateMenuItemDto {
   @Length(1, 50)
   category?: string;
 
-  @IsOptional()
   @IsUUID()
-  zoneId?: string;
+  zoneId: string;
 }

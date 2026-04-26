@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserStatus } from '../entities/user.entity';
+import { Request as ExpressRequest } from 'express';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -18,7 +19,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly userRepository: Repository<User>,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (request: ExpressRequest) => {
+          const rawCookie = request?.headers?.cookie;
+          if (!rawCookie) {
+            return null;
+          }
+          const tokenCookie = rawCookie
+            .split(';')
+            .map((part) => part.trim())
+            .find((part) => part.startsWith('accessToken='));
+          if (!tokenCookie) {
+            return null;
+          }
+          return decodeURIComponent(tokenCookie.slice('accessToken='.length));
+        },
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get('jwt.secret'),
     });

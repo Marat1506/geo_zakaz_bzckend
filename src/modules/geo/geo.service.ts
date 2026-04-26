@@ -20,6 +20,11 @@ export interface GeoCheckResult {
   message?: string;
 }
 
+type ZoneMatch = {
+  zone: ServiceZone;
+  distanceMeters?: number;
+};
+
 @Injectable()
 export class GeoService {
   constructor(
@@ -49,30 +54,53 @@ export class GeoService {
       };
     }
 
-    // Check each zone (support multiple zones: user is in zone if inside any)
+    const matches: ZoneMatch[] = [];
+
+    // Check each zone (user is in zone if inside any)
     for (const zone of zones) {
       let isInside = false;
+      let distanceMeters: number | undefined = undefined;
 
       if (zone.type === ZoneType.CIRCLE) {
         const centerLat = Number(zone.centerLat);
         const centerLng = Number(zone.centerLng);
         const radiusMeters = Number(zone.radiusMeters);
         if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng) || !Number.isFinite(radiusMeters)) continue;
-        const distance = this.calculateDistance(lat, lng, centerLat, centerLng);
-        isInside = distance <= radiusMeters;
+        distanceMeters = this.calculateDistance(lat, lng, centerLat, centerLng);
+        isInside = distanceMeters <= radiusMeters;
       } else if (zone.type === ZoneType.POLYGON) {
         // Check polygon zone using PostGIS ST_Contains
         isInside = await this.checkPointInPolygon(lat, lng, zone.id);
       }
 
       if (isInside) {
-        return {
-          inZone: true,
-          zoneId: zone.id,
-          zoneName: zone.name,
-          sellerId: zone.sellerId ?? undefined,
-        };
+        matches.push({ zone, distanceMeters });
       }
+    }
+
+    if (matches.length > 0) {
+      // Deterministic resolution for overlapping zones:
+      // 1) Prefer circular zones with smallest distance to center.
+      // 2) Otherwise fallback to DB ordering from getActiveZones().
+      const bestMatch = matches
+        .slice()
+        .sort((a, b) => {
+          const aHasDistance = Number.isFinite(a.distanceMeters as number);
+          const bHasDistance = Number.isFinite(b.distanceMeters as number);
+          if (aHasDistance && bHasDistance) {
+            return (a.distanceMeters as number) - (b.distanceMeters as number);
+          }
+          if (aHasDistance) return -1;
+          if (bHasDistance) return 1;
+          return 0;
+        })[0];
+
+      return {
+        inZone: true,
+        zoneId: bestMatch.zone.id,
+        zoneName: bestMatch.zone.name,
+        sellerId: bestMatch.zone.sellerId ?? undefined,
+      };
     }
 
     return {
@@ -185,39 +213,26 @@ export class GeoService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Ensure columns are nullable so we don't break on constraints
-      try {
-        await queryRunner.query('ALTER TABLE orders ALTER COLUMN zone_id DROP NOT NULL');
-      } catch (e) { /* ignore */ }
-
-      try {
-        await queryRunner.query('ALTER TABLE menu_items ALTER COLUMN zone_id DROP NOT NULL');
-      } catch (e) { /* ignore */ }
-
-      try {
-        await queryRunner.query('ALTER TABLE order_items ALTER COLUMN menu_item_id DROP NOT NULL');
-      } catch (e) { /* ignore */ }
-
-      // 2. Clear references in orders (we keep orders for history)
+      // 1. Clear references in orders (we keep orders for history)
       await queryRunner.query(
         'UPDATE orders SET zone_id = NULL WHERE zone_id = $1',
         [id],
       );
 
-      // 3. Clear references in order_items for products we are about to delete
+      // 2. Clear references in order_items for products we are about to delete
       // We keep order_items but decouple them from the menu_item record
       await queryRunner.query(
         'UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id IN (SELECT id FROM menu_items WHERE zone_id = $1)',
         [id],
       );
 
-      // 4. Delete products tied to this zone (as requested by user)
+      // 3. Delete products tied to this zone (as requested by user)
       await queryRunner.query(
         'DELETE FROM menu_items WHERE zone_id = $1',
         [id],
       );
 
-      // 5. Finally delete the zone itself
+      // 4. Finally delete the zone itself
       await queryRunner.query('DELETE FROM service_zones WHERE id = $1', [id]);
 
       await queryRunner.commitTransaction();
@@ -236,6 +251,7 @@ export class GeoService {
     // Get active zones from database
     const zones = await this.serviceZoneRepository.find({
       where: { active: true },
+      order: { createdAt: 'ASC', id: 'ASC' },
     });
 
     return zones;
