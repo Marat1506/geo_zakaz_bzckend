@@ -66,6 +66,10 @@ export class User {
   @Column({ name: 'selfie_url', nullable: true })
   selfieUrl: string | null;
 
+  /** Averaged 128-d face-api.js / faceRecognitionNet descriptor (biometric). */
+  @Column({ name: 'face_embedding', type: 'jsonb', nullable: true })
+  faceEmbedding: number[] | null;
+
   @Column({ name: 'token_version', type: 'integer', default: 0 })
   tokenVersion: number;
 
@@ -100,6 +104,15 @@ export class User {
 
   @Column({ name: 'referral_orders', type: 'integer', default: 0 })
   referralOrders: number;
+
+  @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
+  emailVerifiedAt: Date | null;
+
+  @Column({ name: 'email_verification_code_hash', nullable: true })
+  emailVerificationCodeHash: string | null;
+
+  @Column({ name: 'email_verification_expires_at', type: 'timestamptz', nullable: true })
+  emailVerificationExpiresAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

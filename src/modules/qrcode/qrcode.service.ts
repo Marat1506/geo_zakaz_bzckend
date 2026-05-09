@@ -207,7 +207,7 @@ export class QrCodeService {
   <div class="card">
     <div class="header">
       ${logoSrc ? `<img src="${this.escapeHtml(logoSrc)}" alt="Logo" class="logo">` : ''}
-      <div class="shop-name">${this.escapeHtml(seller.shopName || 'Магазин')}</div>
+      <div class="shop-name">${this.escapeHtml(seller.shopName || 'Store')}</div>
       <div class="owner-name">${this.escapeHtml(seller.name)}</div>
     </div>
 
@@ -229,11 +229,11 @@ export class QrCodeService {
     </div>
 
     <div class="qr-section">
-      <div class="qr-title">Сканируйте для заказа</div>
+      <div class="qr-title">Scan to order</div>
       <div class="qr-code">
         <img src="${qrCode}" alt="QR Code" width="250" height="250">
       </div>
-      <div class="qr-hint">Наведите камеру телефона на QR-код</div>
+      <div class="qr-hint">Point your phone camera at the QR code</div>
     </div>
   </div>
 </body>

@@ -64,13 +64,13 @@ export class OrdersService {
     // Validate all items belong to the same zone
     const itemZoneIds = new Set(menuItems.map((mi) => mi.zoneId));
     if (itemZoneIds.size > 1) {
-      throw new BadRequestException('Все товары должны быть из одной зоны');
+      throw new BadRequestException('All items must be from the same zone');
     }
     // Also verify items belong to the detected zone
     if (itemZoneIds.size === 1) {
       const itemZoneId = [...itemZoneIds][0];
       if (itemZoneId && geoCheck.zoneId && itemZoneId !== geoCheck.zoneId) {
-        throw new BadRequestException('Все товары должны быть из одной зоны');
+        throw new BadRequestException('All items must be from the same zone');
       }
     }
 
@@ -166,8 +166,8 @@ export class OrdersService {
       this.notificationGateway.emitNewOrder(geoCheck.sellerId, savedOrder);
       this.notificationService
         .sendPushToUser(geoCheck.sellerId, {
-          title: 'Новый заказ',
-          body: `Новый заказ #${savedOrder.orderNumber} на сумму ${savedOrder.totalAmount}`,
+          title: 'New order',
+          body: `New order #${savedOrder.orderNumber} for ${savedOrder.totalAmount}`,
         })
         .catch(() => {});
     }
@@ -197,13 +197,13 @@ export class OrdersService {
 
     if (user.role === UserRole.SELLER) {
       if (order.sellerId !== user.id) {
-        throw new ForbiddenException('Вы можете просматривать только свои заказы');
+        throw new ForbiddenException('You can only view your own orders');
       }
       return order;
     }
 
     if (order.customerId !== user.id) {
-      throw new ForbiddenException('Вы можете просматривать только свои заказы');
+      throw new ForbiddenException('You can only view your own orders');
     }
 
     return order;
@@ -259,7 +259,7 @@ export class OrdersService {
     if (user?.role === UserRole.SELLER) {
       if (order.sellerId !== user.id) {
         throw new ForbiddenException(
-          'Вы можете обновлять статус только своих заказов',
+          'You can only update status for your own orders',
         );
       }
     }
@@ -276,15 +276,15 @@ export class OrdersService {
         if (status === OrderStatus.ON_THE_WAY) {
           this.notificationService
             .sendPushToUser(order.customerId, {
-              title: 'Заказ в пути',
-              body: 'Ваш заказ в пути',
+              title: 'Order on the way',
+              body: 'Your order is on the way',
             })
             .catch(() => {});
         } else if (status === OrderStatus.DELIVERED) {
           this.notificationService
             .sendPushToUser(order.customerId, {
-              title: 'Заказ доставлен',
-              body: 'Ваш заказ доставлен',
+              title: 'Order delivered',
+              body: 'Your order has been delivered',
             })
             .catch(() => {});
         }

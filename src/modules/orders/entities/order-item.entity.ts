@@ -20,12 +20,13 @@ export class OrderItem {
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
-  @Column({ name: 'menu_item_id' })
-  menuItemId: string;
+  /** Null after the linked menu item (zone) was removed; name/price remain as snapshot. */
+  @Column({ name: 'menu_item_id', nullable: true })
+  menuItemId: string | null;
 
-  @ManyToOne(() => MenuItem)
+  @ManyToOne(() => MenuItem, { nullable: true })
   @JoinColumn({ name: 'menu_item_id' })
-  menuItem: MenuItem;
+  menuItem: MenuItem | null;
 
   @Column({ name: 'menu_item_name' })
   menuItemName: string;

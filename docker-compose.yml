@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-postgres}']
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,9 +59,15 @@ services:
       JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://lotfood.ru,https://www.lotfood.ru}
+      FRONTEND_URL: ${FRONTEND_URL:-https://lotfood.ru}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-5242880}
       ALLOWED_FILE_TYPES: ${ALLOWED_FILE_TYPES:-image/jpeg,image/png,image/jpg}
+      FACE_MATCH_THRESHOLD: ${FACE_MATCH_THRESHOLD:-0.45}
+      FACE_AMBIGUITY_GAP: ${FACE_AMBIGUITY_GAP:-0.02}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@lotfood.ru}
     depends_on:
       postgres:
         condition: service_healthy

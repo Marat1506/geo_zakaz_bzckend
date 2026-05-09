@@ -24,8 +24,8 @@ async function seed() {
   const hashedPassword = await bcrypt.hash('admin123', 10);
   await dataSource.query(
     `
-    INSERT INTO users (email, password_hash, role)
-    VALUES ($1, $2, $3)
+    INSERT INTO users (email, password_hash, role, email_verified_at)
+    VALUES ($1, $2, $3, NOW())
     ON CONFLICT (email) DO NOTHING
   `,
     ['admin@example.com', hashedPassword, 'admin'],

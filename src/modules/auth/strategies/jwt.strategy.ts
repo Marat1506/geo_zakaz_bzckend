@@ -8,7 +8,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserStatus } from '../entities/user.entity';
+import { User, UserRole, UserStatus } from '../entities/user.entity';
 import { Request as ExpressRequest } from 'express';
 
 @Injectable()
@@ -55,15 +55,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (user.status === UserStatus.PENDING) {
-      throw new ForbiddenException('Ваш аккаунт ожидает одобрения');
+      throw new ForbiddenException('Your account is pending approval');
     }
 
     if (user.status === UserStatus.REJECTED) {
-      throw new ForbiddenException('Ваш запрос на регистрацию отклонен');
+      throw new ForbiddenException('Your registration was rejected');
     }
 
     if (user.isBlocked) {
-      throw new ForbiddenException('Ваш аккаунт заблокирован');
+      throw new ForbiddenException('Your account is blocked');
+    }
+
+    if (
+      (user.role === UserRole.CUSTOMER || user.role === UserRole.SELLER) &&
+      !user.emailVerifiedAt
+    ) {
+      throw new ForbiddenException('Please verify your email');
     }
 
     return user;

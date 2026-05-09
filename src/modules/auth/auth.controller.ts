@@ -6,6 +6,10 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AuthService, AuthResponse, CreateSellerDto } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { VerifyRegistrationDto } from './dto/verify-registration.dto';
+import { ResendRegistrationDto } from './dto/resend-registration.dto';
+import { FaceLoginDto } from './dto/face-login.dto';
+import { EnrollFaceDto } from './dto/enroll-face.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -18,6 +22,7 @@ import { User } from './entities/user.entity';
 import { FilesService } from '../files/files.service';
 import { QrCodeService } from '../qrcode/qrcode.service';
 import { Request as ExpressRequest, Response } from 'express';
+import { FACE_EMBEDDING_DIM, parseFaceDescriptorsJson } from './utils/face-embedding.util';
 
 @Controller('auth')
 export class AuthController {
@@ -102,6 +107,7 @@ export class AuthController {
       passportRegistration?: Express.Multer.File[];
       selfie?: Express.Multer.File[];
     },
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const registerDto: RegisterDto = {
       email: body.email,
@@ -114,7 +120,7 @@ export class AuthController {
     // For seller registration, documents are required
     if (registerDto.role === UserRole.SELLER) {
       if (!files?.passportMain?.[0] || !files?.passportRegistration?.[0] || !files?.selfie?.[0]) {
-        throw new BadRequestException('Для регистрации продавца необходимо загрузить все документы');
+        throw new BadRequestException('Upload all required documents to register as a seller');
       }
     }
 
@@ -136,7 +142,38 @@ export class AuthController {
       selfieUrl = result.url;
     }
 
-    return this.authService.register(registerDto, { passportMainUrl, passportRegistrationUrl, selfieUrl });
+    const faceDescriptors = parseFaceDescriptorsJson(body.faceDescriptors);
+
+    const auth = await this.authService.register(
+      registerDto,
+      { passportMainUrl, passportRegistrationUrl, selfieUrl },
+      faceDescriptors,
+    );
+
+    if (auth.accessToken && auth.refreshToken) {
+      this.setAuthCookies(res, auth);
+    }
+
+    return auth;
+  }
+
+  @Post('register/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyRegistration(
+    @Body() dto: VerifyRegistrationDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const auth = await this.authService.verifyRegistrationEmail(dto);
+    if (auth.accessToken && auth.refreshToken) {
+      this.setAuthCookies(res, auth);
+    }
+    return auth;
+  }
+
+  @Post('register/resend-code')
+  @HttpCode(HttpStatus.OK)
+  async resendRegistrationCode(@Body() dto: ResendRegistrationDto): Promise<{ ok: true }> {
+    return this.authService.resendRegistrationCode(dto.email);
   }
 
   @Post('login')
@@ -148,6 +185,26 @@ export class AuthController {
     const auth = await this.authService.login(loginDto);
     this.setAuthCookies(res, auth);
     return auth;
+  }
+
+  @Post('face/login')
+  @HttpCode(HttpStatus.OK)
+  async faceLogin(
+    @Body() dto: FaceLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const auth = dto.email?.trim()
+      ? await this.authService.loginWithFace(dto.email.trim().toLowerCase(), dto.descriptor)
+      : await this.authService.loginWithFaceIdentify(dto.descriptor);
+    this.setAuthCookies(res, auth);
+    return auth;
+  }
+
+  @Post('face/enroll')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async enrollFace(@Request() req: any, @Body() dto: EnrollFaceDto) {
+    return this.authService.enrollFace(req.user.id, dto.descriptors);
   }
 
   @Post('refresh')
@@ -184,7 +241,17 @@ export class AuthController {
   async getMe(@Request() req: any) {
     const user = await this.userRepository.findOne({ where: { id: req.user.id } });
     if (!user) return null;
-    return { id: user.id, email: user.email, name: user.name, phone: user.phone, role: user.role };
+    const hasFaceLogin =
+      Array.isArray(user.faceEmbedding) && user.faceEmbedding.length === FACE_EMBEDDING_DIM;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+      hasFaceLogin,
+      emailVerified: !!user.emailVerifiedAt,
+    };
   }
 
   @Patch('profile')

@@ -3,9 +3,10 @@ import {
   InternalServerErrorException,
   ForbiddenException,
   NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 import { ServiceZone, ZoneType } from './entities/service-zone.entity';
 import { CreateServiceZoneDto } from './dto/create-service-zone.dto';
 import { UpdateServiceZoneDto } from './dto/update-service-zone.dto';
@@ -24,6 +25,13 @@ type ZoneMatch = {
   zone: ServiceZone;
   distanceMeters?: number;
 };
+
+/** Order statuses that block zone deletion (until delivered / cancelled / fully paid). */
+const INCOMPLETE_ORDER_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING_PAYMENT,
+  OrderStatus.PREPARING,
+  OrderStatus.ON_THE_WAY,
+];
 
 @Injectable()
 export class GeoService {
@@ -121,7 +129,7 @@ export class GeoService {
   /** Creates a zone — only sellers can create zones */
   async createZone(dto: CreateServiceZoneDto, user: User): Promise<ServiceZone> {
     if (user.role !== UserRole.SELLER) {
-      throw new ForbiddenException('Только продавцы могут создавать зоны');
+      throw new ForbiddenException('Only sellers can create zones');
     }
     const zone = this.serviceZoneRepository.create({ ...dto, sellerId: user.id });
     return this.serviceZoneRepository.save(zone);
@@ -134,7 +142,7 @@ export class GeoService {
       throw new NotFoundException('Zone not found');
     }
     if (user.role !== UserRole.SELLER || zone.sellerId !== user.id) {
-      throw new ForbiddenException('Вы можете редактировать только свои зоны');
+      throw new ForbiddenException('You can only edit your own zones');
     }
 
     const updateData = { ...dto };
@@ -151,22 +159,31 @@ export class GeoService {
       throw new NotFoundException('Zone not found');
     }
     if (user.role !== UserRole.SELLER || zone.sellerId !== user.id) {
-      throw new ForbiddenException('Вы можете удалять только свои зоны');
+      throw new ForbiddenException('You can only delete your own zones');
     }
 
-    const activeOrders = await this.orderRepository.count({
-      where: {
-        zoneId: id,
-        status: In([
-          OrderStatus.PENDING_PAYMENT,
-          OrderStatus.PREPARING,
-          OrderStatus.ON_THE_WAY,
-        ]),
-      },
-    });
-    if (activeOrders > 0) {
-      throw new ForbiddenException(
-        `Нельзя удалить зону: в ней есть незакрытые заказы (${activeOrders}). Завершите или отмените их сначала.`,
+    const incompleteForZone = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.status IN (:...statuses)', {
+        statuses: INCOMPLETE_ORDER_STATUSES,
+      })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('order.zoneId = :zoneId', { zoneId: id }).orWhere(
+            `EXISTS (
+              SELECT 1 FROM order_items oi
+              INNER JOIN menu_items mi ON mi.id = oi.menu_item_id
+              WHERE oi.order_id = order.id AND mi.zone_id = :zoneId
+            )`,
+            { zoneId: id },
+          );
+        }),
+      )
+      .getCount();
+
+    if (incompleteForZone > 0) {
+      throw new ConflictException(
+        `Cannot delete zone: there are ${incompleteForZone} incomplete order(s). Wait for delivery, cancellation, or final payment for all of them.`,
       );
     }
 
@@ -213,26 +230,19 @@ export class GeoService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Clear references in orders (we keep orders for history)
+      // 1. Unlink orders from zone (order history kept; line items keep name/price snapshot).
       await queryRunner.query(
         'UPDATE orders SET zone_id = NULL WHERE zone_id = $1',
         [id],
       );
 
-      // 2. Clear references in order_items for products we are about to delete
-      // We keep order_items but decouple them from the menu_item record
-      await queryRunner.query(
-        'UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id IN (SELECT id FROM menu_items WHERE zone_id = $1)',
-        [id],
-      );
-
-      // 3. Delete products tied to this zone (as requested by user)
+      // 2. Remove all menu items in zone (FK order_items.menu_item_id → ON DELETE SET NULL, migration 1700000000026).
       await queryRunner.query(
         'DELETE FROM menu_items WHERE zone_id = $1',
         [id],
       );
 
-      // 4. Finally delete the zone itself
+      // 3. Delete the zone
       await queryRunner.query('DELETE FROM service_zones WHERE id = $1', [id]);
 
       await queryRunner.commitTransaction();
