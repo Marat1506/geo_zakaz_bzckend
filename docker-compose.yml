@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ${DB_NAME:-food_ordering}
     ports:
       - '${DB_PORT:-5432}:5432'
@@ -51,7 +51,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_PASSWORD: postgres
       DB_NAME: ${DB_NAME:-food_ordering}
       REDIS_HOST: redis
       REDIS_PORT: 6379
